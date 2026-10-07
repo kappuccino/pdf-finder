@@ -1,4 +1,5 @@
-export const SCHEMA_VERSION = 1;
+// v2 : rowids des pages déterministes (docId × PAGE_STRIDE + page)
+export const SCHEMA_VERSION = 2;
 
 const DOCS_DDL = `
 CREATE TABLE IF NOT EXISTS docs (
@@ -64,6 +65,15 @@ export async function detectCapabilities(db) {
 export async function initSchema(db, { log = console.warn, disableTrigram = false } = {}) {
   const caps = await detectCapabilities(db);
   if (disableTrigram) caps.trigram = false;
+
+  // L'index n'est qu'un cache des PDF : si le schéma a changé, on le reconstruit.
+  const [{ user_version: version }] = await db.all('PRAGMA user_version');
+  if (version !== 0 && version !== SCHEMA_VERSION) {
+    log(`[pdfref] Schéma v${version} → v${SCHEMA_VERSION} : l'index est vidé, relancez l'indexation.`);
+    await db.exec('DROP TABLE IF EXISTS pages_text');
+    await db.exec('DROP TABLE IF EXISTS pages_ref');
+    await db.exec('DROP TABLE IF EXISTS docs');
+  }
   await db.exec(DOCS_DDL);
 
   const existing = await db.all("SELECT name, sql FROM sqlite_master WHERE name IN ('pages_text', 'pages_ref')");

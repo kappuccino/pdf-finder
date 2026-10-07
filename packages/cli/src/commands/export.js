@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { exportPage, exportPages, normalize, search } from '@pdfref/core';
+import { exportFileName, exportPage, exportPages, normalize, search } from '@pdfref/core';
 import { openIndex } from '../context.js';
 
 const safe = (s) => s.replace(/[\\/:*?"<>|\s]+/g, '_').replace(/^_+|_+$/g, '');
@@ -35,8 +35,7 @@ export async function exportCommand(ref, opts) {
   }
 
   for (const r of selected) {
-    const base = safe(path.basename(r.docPath, path.extname(r.docPath)));
-    const file = path.join(opts.out, `${base}_p${r.pageNum}_${refName}.pdf`);
+    const file = path.join(opts.out, exportFileName(r.docPath, r.pageNum, ref));
     await writeFile(file, await exportPage(await load(r.docPath), r.pageNum));
     console.log(file);
   }

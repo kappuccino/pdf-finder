@@ -1,4 +1,5 @@
 import { PDFDocument } from 'pdf-lib';
+import { normalize } from './normalize.js';
 
 /**
  * Copie des pages (éventuellement issues de plusieurs PDF) dans un nouveau PDF autonome.
@@ -34,3 +35,18 @@ export async function exportPages(items) {
 export function exportPage(bytes, pageNum) {
   return exportPages([{ bytes, pageNum }]);
 }
+
+/**
+ * Nom de fichier d'une page exportée : `{nomPDF}_p{num}_{REF}.pdf`.
+ * Fonctionne avec des chemins POSIX ou Windows.
+ *
+ * @param {string} docPath
+ * @param {number} pageNum
+ * @param {string} ref référence telle que saisie (normalisée ici)
+ */
+export function exportFileName(docPath, pageNum, ref) {
+  const base = docPath.split(/[\\/]/).pop().replace(/\.pdf$/i, '');
+  return `${safeName(base)}_p${pageNum}_${safeName(normalize(ref))}.pdf`;
+}
+
+const safeName = (s) => s.replace(/[\\/:*?"<>|\s]+/g, '_').replace(/^_+|_+$/g, '');

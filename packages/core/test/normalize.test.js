@@ -46,3 +46,11 @@ describe('normalizeWithMap', () => {
     expect(map).toEqual([0, 1, 1, 3]);
   });
 });
+
+describe('exportFileName', async () => {
+  const { exportFileName } = await import('../src/export-page.js');
+  it('POSIX et Windows', () => {
+    expect(exportFileName('/a/b/CIBE .pdf', 7, '0540010-R13')).toBe('CIBE_p7_0540010R13.pdf');
+    expect(exportFileName('C:\\PDF\\S15 Panneau.PDF', 1, 'ab 12')).toBe('S15_Panneau_p1_AB12.pdf');
+  });
+});

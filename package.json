@@ -13,7 +13,10 @@
     "lint": "eslint packages scripts",
     "test": "npm run lint && vitest run",
     "bench": "node packages/cli/bench/search-bench.js",
-    "pdfref": "node packages/cli/src/main.js"
+    "pdfref": "node packages/cli/src/main.js",
+    "app:dev": "npm run tauri dev -w @pdfref/app",
+    "app:build": "npm run tauri build -w @pdfref/app",
+    "app:build:mac": "packages/app/scripts/build-mac.sh"
   },
   "devDependencies": {
     "eslint": "^10.0.0",
