@@ -116,6 +116,11 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Installeurs à publier
+        shell: bash
+        run: |
+          # les artifacts arrivent dans des sous-dossiers (dmg/, nsis/, msi/) : on les liste et on échoue s'il n'y a rien
+          find dist -type f | tee /dev/stderr | grep -qE '\.(dmg|exe|msi)$'
       - name: Nom de la release
         id: meta
         shell: bash
@@ -137,4 +142,8 @@ jobs:
           body: ${{ steps.meta.outputs.body }}
           target_commitish: ${{ github.sha }}
           make_latest: true
-          files: dist/*
+          fail_on_unmatched_files: true
+          files: |
+            dist/**/*.dmg
+            dist/**/*.exe
+            dist/**/*.msi
