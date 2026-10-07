@@ -1,0 +1,8 @@
+node_modules/
+fixtures/*.pdf
+fixtures/expected.json
+*.db
+*.db-*
+out/
+.DS_Store
+CATALOGUE BT 2026/

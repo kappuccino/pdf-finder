@@ -1,0 +1,14 @@
+{
+  "name": "@pdfref/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "pdfref": "./src/main.js" },
+  "dependencies": {
+    "@pdfref/core": "*",
+    "better-sqlite3": "^13.0.0",
+    "commander": "^15.0.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.4.299"
+  }
+}
