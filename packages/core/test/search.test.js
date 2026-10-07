@@ -76,18 +76,3 @@ describe('search : tri par date de création', () => {
     db.close();
   });
 });
-
-describe('schéma : migration v2 → v3', () => {
-  it('ajoute created_at sans vider l’index', async () => {
-    const db = openSqlite(':memory:');
-    await db.exec(`CREATE TABLE docs (id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL, hash TEXT NOT NULL, page_count INTEGER NOT NULL, indexed_at INTEGER NOT NULL);
-      INSERT INTO docs VALUES (1, '/a.pdf', 'h', 1, 0);
-      PRAGMA user_version = 2;`);
-    await initSchema(db, { log: () => {} });
-    const [doc] = await db.all('SELECT path, created_at FROM docs');
-    expect(doc).toEqual({ path: '/a.pdf', created_at: null });
-    const [{ user_version }] = await db.all('PRAGMA user_version');
-    expect(user_version).toBe(3);
-    db.close();
-  });
-});

@@ -1,6 +1,20 @@
-// v2 : rowids des pages déterministes (docId × PAGE_STRIDE + page)
-// v3 : docs.created_at (date de création du fichier, ms)
-export const SCHEMA_VERSION = 3;
+/**
+ * Migrations du schéma, appliquées dans l'ordre à partir de la version de la base (PRAGMA user_version).
+ * Pour faire évoluer le schéma :
+ *   1. ajouter une entrée { version: N + 1, up: [...] } ici ;
+ *   2. reporter la modification dans le DDL ci-dessous (utilisé pour une base neuve) ;
+ *   3. ajouter un test de migration (packages/core/test/schema.test.js).
+ * Une base plus ancienne que BASE_VERSION, ou plus récente que l'app, est reconstruite :
+ * l'index n'est qu'un cache des PDF, rien n'est perdu (les réglages sont stockés ailleurs).
+ */
+export const MIGRATIONS = [
+  // v3 : date de création du fichier (ms), renseignée au prochain passage de l'indexation
+  { version: 3, up: ['ALTER TABLE docs ADD COLUMN created_at INTEGER'] },
+];
+
+/** v2 : rowids des pages déterministes (docId × PAGE_STRIDE + page) ; avant, l'index est incompatible. */
+export const BASE_VERSION = 2;
+export const SCHEMA_VERSION = MIGRATIONS.at(-1).version;
 
 const DOCS_DDL = `
 CREATE TABLE IF NOT EXISTS docs (
@@ -68,18 +82,25 @@ export async function initSchema(db, { log = console.warn, disableTrigram = fals
   const caps = await detectCapabilities(db);
   if (disableTrigram) caps.trigram = false;
 
-  // L'index n'est qu'un cache des PDF : si le schéma a changé, on le reconstruit.
-  const [{ user_version: version }] = await db.all('PRAGMA user_version');
-  if (version !== 0 && version !== SCHEMA_VERSION && version !== 2) {
-    log(`[pdfref] Schéma v${version} → v${SCHEMA_VERSION} : l'index est vidé, relancez l'indexation.`);
+  let [{ user_version: version }] = await db.all('PRAGMA user_version');
+  if (version !== 0 && (version < BASE_VERSION || version > SCHEMA_VERSION)) {
+    log(`[pdfref] Schéma v${version} non migrable vers v${SCHEMA_VERSION} : l'index est reconstruit.`);
     await db.exec('DROP TABLE IF EXISTS pages_text');
     await db.exec('DROP TABLE IF EXISTS pages_ref');
     await db.exec('DROP TABLE IF EXISTS docs');
+    version = 0;
   }
-  await db.exec(DOCS_DDL);
-  if (version === 2) {
-    // v2 → v3 sans réindexation : la date est renseignée au prochain passage de l'indexation.
-    await db.exec('ALTER TABLE docs ADD COLUMN created_at INTEGER');
+
+  if (version === 0) {
+    await db.exec(DOCS_DDL); // base neuve : schéma complet, aucune migration à appliquer
+  } else {
+    for (const m of MIGRATIONS.filter((m) => m.version > version)) {
+      log(`[pdfref] Migration du schéma v${version} → v${m.version}`);
+      for (const sql of m.up) await db.exec(sql);
+      // version enregistrée après chaque étape : une migration interrompue reprend à la bonne étape
+      await db.exec(`PRAGMA user_version = ${m.version}`);
+      version = m.version;
+    }
   }
 
   const existing = await db.all("SELECT name, sql FROM sqlite_master WHERE name IN ('pages_text', 'pages_ref')");
