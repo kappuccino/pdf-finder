@@ -104,8 +104,9 @@ jobs:
             ${{ matrix.bundle-dir }}/msi/*.msi
 
   release:
-    name: Release (brouillon)
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Une release par commit poussé sur main (tag build-N), et une release « officielle » par tag v*.
+    name: Release
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -115,7 +116,25 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Nom de la release
+        id: meta
+        shell: bash
+        env:
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+            echo "name=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=build-$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "name=Build $GITHUB_RUN_NUMBER — $(echo "$MESSAGE" | head -1)" >> "$GITHUB_OUTPUT"
+          fi
+          { echo "body<<__EOF__"; echo "$MESSAGE"; echo; echo "Commit : $GITHUB_SHA"; echo "__EOF__"; } >> "$GITHUB_OUTPUT"
       - uses: softprops/action-gh-release@v2
         with:
-          draft: true
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.name }}
+          body: ${{ steps.meta.outputs.body }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
           files: dist/*

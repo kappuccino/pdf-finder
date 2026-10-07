@@ -139,5 +139,7 @@ APPLE_TEAM_ID="TEAMID"
 ## CI GitHub Actions (`.github/workflows/build.yml`)
 
 - **À chaque push ou PR** : lint, tests et bench (Ubuntu), puis build de l'app sur **macOS (universel Intel + Apple Silicon)** et **Windows** (NSIS + MSI). Les installeurs sont téléchargeables dans les *artifacts* du run, et leur taille est affichée dans le résumé du job.
-- **Sur un tag `v*`** (ex. `git tag v0.1.0 && git push --tags`) : une release GitHub est créée en brouillon, avec les installeurs.
+- **Une release GitHub par commit poussé sur `main`** : tag `build-N` (N = numéro du run), avec le message du commit et les installeurs macOS et Windows. Elle devient la « Latest release ».
+- **Sur un tag `v*`** (ex. `git tag v0.1.0 && git push --tags`) : release nommée `v0.1.0`, avec les installeurs.
+- Une PR ne crée pas de release, et une release n'est publiée que si les tests et les deux builds réussissent.
 - **Signature macOS** : signature ad-hoc par défaut. Pour signer et notariser, ajouter ces secrets au dépôt : `APPLE_CERTIFICATE` (`base64 -i cert.p12`), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`.
