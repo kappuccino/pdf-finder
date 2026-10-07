@@ -6,3 +6,4 @@ fixtures/expected.json
 out/
 .DS_Store
 CATALOGUE BT 2026/
+build/
