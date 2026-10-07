@@ -135,3 +135,9 @@ APPLE_ID="vous@exemple.com"
 APPLE_PASSWORD="mot-de-passe-d-app"   # appleid.apple.com → mots de passe d'app
 APPLE_TEAM_ID="TEAMID"
 ```
+
+## CI GitHub Actions (`.github/workflows/build.yml`)
+
+- **À chaque push ou PR** : lint, tests et bench (Ubuntu), puis build de l'app sur **macOS (universel Intel + Apple Silicon)** et **Windows** (NSIS + MSI). Les installeurs sont téléchargeables dans les *artifacts* du run, et leur taille est affichée dans le résumé du job.
+- **Sur un tag `v*`** (ex. `git tag v0.1.0 && git push --tags`) : une release GitHub est créée en brouillon, avec les installeurs.
+- **Signature macOS** : signature ad-hoc par défaut. Pour signer et notariser, ajouter ces secrets au dépôt : `APPLE_CERTIFICATE` (`base64 -i cert.p12`), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`.

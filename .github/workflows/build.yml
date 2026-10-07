@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests (core + CLI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 25
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run bench
+
+  build:
+    name: App ${{ matrix.name }}
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (universel)
+            os: macos-latest
+            args: --target universal-apple-darwin
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            bundle-dir: packages/app/src-tauri/target/universal-apple-darwin/release/bundle
+          - name: Windows
+            os: windows-latest
+            args: ''
+            rust-targets: ''
+            bundle-dir: packages/app/src-tauri/target/release/bundle
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 25
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: packages/app/src-tauri -> target
+      - run: npm ci
+
+      # Signature macOS : n'est activée que si les secrets existent, sinon signature ad-hoc
+      # (tauri.conf.json). Secrets attendus : APPLE_CERTIFICATE (.p12 en base64),
+      # APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, et pour la notarisation
+      # APPLE_ID, APPLE_PASSWORD (mot de passe d'app), APPLE_TEAM_ID.
+      - name: Configurer la signature macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -n "${!v}" ]; then
+              { echo "$v<<__EOF__"; echo "${!v}"; echo "__EOF__"; } >> "$GITHUB_ENV"
+            fi
+          done
+          if [ -n "$APPLE_SIGNING_IDENTITY" ]; then echo "Signature Developer ID"; else echo "Signature ad-hoc (aucun secret)"; fi
+
+      - name: Build Tauri
+        run: npm run tauri -w @pdfref/app -- build ${{ matrix.args }}
+
+      - name: Taille des installeurs
+        shell: bash
+        run: |
+          {
+            echo "### Installeurs — ${{ matrix.name }}"
+            echo '| Fichier | Taille |'
+            echo '|---|---|'
+            find "${{ matrix.bundle-dir }}" -maxdepth 2 -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.msi' \) | while read -r f; do
+              echo "| $(basename "$f") | $(du -h "$f" | cut -f1) |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pdfref-${{ runner.os }}
+          if-no-files-found: error
+          path: |
+            ${{ matrix.bundle-dir }}/dmg/*.dmg
+            ${{ matrix.bundle-dir }}/nsis/*.exe
+            ${{ matrix.bundle-dir }}/msi/*.msi
+
+  release:
+    name: Release (brouillon)
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: dist/*
