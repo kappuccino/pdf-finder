@@ -42,16 +42,52 @@ describe('search : classement', () => {
     ]);
   });
 
-  it('exact, puis prefix, puis partial', async () => {
+  it('ordre fichier/page conservé, les partial en dernier', async () => {
     const res = await search(db, '0540010R13');
     expect(res.map((r) => [r.pageNum, r.match])).toEqual([
-      [3, 'exact'],
       [2, 'prefix'],
+      [3, 'exact'],
       [1, 'partial'],
     ]);
   });
 
   it('aucun résultat perdu', async () => {
     expect(await search(db, '30540')).toHaveLength(1);
+  });
+});
+
+describe('search : tri par date de création', () => {
+  it('les fichiers les plus récents d’abord, sans date à la fin', async () => {
+    const db = openSqlite(':memory:');
+    await initSchema(db, { log: () => {} });
+    const docs = [
+      ['/vieux.pdf', Date.UTC(2020, 0, 1)],
+      ['/sans-date.pdf', null],
+      ['/recent.pdf', Date.UTC(2026, 5, 1)],
+      ['/moyen.pdf', Date.UTC(2024, 2, 1)],
+    ];
+    for (const [path, createdAt] of docs) {
+      const { lastInsertId } = await db.run("INSERT INTO docs (path, hash, page_count, indexed_at, created_at) VALUES (?, 'x', 1, 0, ?)", [path, createdAt]);
+      await insertPages(db, lastInsertId, [{ pageNum: 1, text: 'Réf. AB-1234-X' }]);
+    }
+    const res = await search(db, 'AB1234X');
+    expect(res.map((r) => r.docPath)).toEqual(['/recent.pdf', '/moyen.pdf', '/vieux.pdf', '/sans-date.pdf']);
+    expect(res[0].createdAt).toBe(Date.UTC(2026, 5, 1));
+    db.close();
+  });
+});
+
+describe('schéma : migration v2 → v3', () => {
+  it('ajoute created_at sans vider l’index', async () => {
+    const db = openSqlite(':memory:');
+    await db.exec(`CREATE TABLE docs (id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL, hash TEXT NOT NULL, page_count INTEGER NOT NULL, indexed_at INTEGER NOT NULL);
+      INSERT INTO docs VALUES (1, '/a.pdf', 'h', 1, 0);
+      PRAGMA user_version = 2;`);
+    await initSchema(db, { log: () => {} });
+    const [doc] = await db.all('SELECT path, created_at FROM docs');
+    expect(doc).toEqual({ path: '/a.pdf', created_at: null });
+    const [{ user_version }] = await db.all('PRAGMA user_version');
+    expect(user_version).toBe(3);
+    db.close();
   });
 });

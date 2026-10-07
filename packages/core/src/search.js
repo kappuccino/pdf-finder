@@ -17,6 +17,7 @@ const RANK = { exact: 0, prefix: 1, partial: 2 };
  * @typedef {object} SearchResult
  * @property {string} docPath
  * @property {number} pageNum
+ * @property {number | null} createdAt date de création du fichier (ms)
  * @property {MatchQuality} match
  * @property {string} snippet extrait du texte lisible autour de la correspondance
  * @property {{ start: number, end: number } | null} highlight position de la référence dans `snippet`
@@ -24,7 +25,8 @@ const RANK = { exact: 0, prefix: 1, partial: 2 };
 
 /**
  * Recherche une référence (sous-chaîne, après normalisation).
- * Les résultats sont triés par qualité de correspondance, puis par fichier et page.
+ * Tri : fichiers les plus récents d'abord (date de création), puis chemin et page.
+ * Les correspondances 'partial' (souvent des faux positifs) passent en dernier.
  *
  * @param {import('./db-adapter.js').DbAdapter} db
  * @param {string} query
@@ -39,22 +41,28 @@ export async function search(db, query, { refMode = 'trigram', limit = MAX_RESUL
   const param = refMode === 'trigram' ? `"${q.replaceAll('"', '""')}"` : `%${q.replace(/[\\%_]/g, '\\$&')}%`;
 
   const rows = await db.all(
-    `SELECT d.path AS docPath, r.page_num AS pageNum, t.content AS content
+    `SELECT d.path AS docPath, d.created_at AS createdAt, r.page_num AS pageNum, t.content AS content
        FROM pages_ref r
        JOIN docs d ON d.id = r.doc_id
        JOIN pages_text t ON t.rowid = r.rowid
       WHERE ${where}
-      ORDER BY d.path, r.page_num
+      ORDER BY d.created_at IS NULL, d.created_at DESC, d.path, r.page_num
       LIMIT ?`,
     [param, Math.min(limit, MAX_RESULTS)],
   );
 
-  const results = rows.map(({ docPath, pageNum, content }) => {
+  const results = rows.map(({ docPath, createdAt, pageNum, content }) => {
     const m = findBestMatch(content, q);
-    return { docPath, pageNum: Number(pageNum), match: m?.match ?? 'partial', ...makeSnippet(content, m) };
+    return {
+      docPath,
+      createdAt: createdAt == null ? null : Number(createdAt),
+      pageNum: Number(pageNum),
+      match: m?.match ?? 'partial',
+      ...makeSnippet(content, m),
+    };
   });
-  // tri stable : l'ordre fichier/page est conservé à qualité égale
-  return results.sort((a, b) => RANK[a.match] - RANK[b.match]);
+  // tri stable : l'ordre date/fichier/page de SQLite est conservé, seuls les 'partial' passent à la fin
+  return results.sort((a, b) => (a.match === 'partial') - (b.match === 'partial'));
 }
 
 const ALNUM = /[\p{L}\p{N}]/u;

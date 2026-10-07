@@ -1,7 +1,7 @@
 <script setup>
 import { nextTick, watch } from 'vue';
 import { dragOnMove, prepareDrag } from '../lib/drag.js';
-import { dirName, fileName } from '../lib/paths.js';
+import { dirName, fileName, formatDate } from '../lib/paths.js';
 
 const props = defineProps({ results: Array, selected: Object, query: String });
 const emit = defineEmits(['select']);
@@ -37,6 +37,7 @@ watch(
       <div class="result-head">
         <span class="result-name">{{ fileName(r.docPath) }}</span>
         <span class="result-page">page {{ r.pageNum }}</span>
+        <span class="result-date" title="Date de création du fichier">{{ formatDate(r.createdAt) }}</span>
       </div>
       <div class="result-path">{{ dirName(r.docPath) }}</div>
       <div class="result-snippet">

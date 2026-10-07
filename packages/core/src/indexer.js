@@ -13,16 +13,19 @@ const BATCH = 200;
  * donc une indexation interrompue est simplement refaite au passage suivant.
  *
  * @param {import('./db-adapter.js').DbAdapter} db
- * @param {{ path: string, bytes: Uint8Array }} file
+ * @param {{ path: string, bytes: Uint8Array, createdAt?: number | null }} file createdAt : date de création du fichier (ms)
  * @param {{ extractPages: Function }} extractor
  * @param {{ onPage?: (pageNum: number, pageCount: number) => void, force?: boolean }} [opts]
  * @returns {Promise<{ status: 'added' | 'updated' | 'skipped', pageCount: number }>}
  */
-export async function indexDocument(db, { path, bytes }, extractor, { onPage, force = false } = {}) {
+export async function indexDocument(db, { path, bytes, createdAt = null }, extractor, { onPage, force = false } = {}) {
   const docPath = path.normalize('NFC');
   const hash = await sha1Hex(bytes);
-  const [existing] = await db.all('SELECT id, hash, page_count FROM docs WHERE path = ?', [docPath]);
+  const [existing] = await db.all('SELECT id, hash, page_count, created_at FROM docs WHERE path = ?', [docPath]);
   if (existing && existing.hash === hash && !force) {
+    if (createdAt != null && existing.created_at !== createdAt) {
+      await db.run('UPDATE docs SET created_at = ? WHERE id = ?', [createdAt, existing.id]);
+    }
     return { status: 'skipped', pageCount: existing.page_count };
   }
 
@@ -35,11 +38,11 @@ export async function indexDocument(db, { path, bytes }, extractor, { onPage, fo
       await db.run("UPDATE docs SET hash = '' WHERE id = ?", [docId]);
       await deleteDocPages(db, docId);
     } else {
-      const res = await db.run("INSERT INTO docs (path, hash, page_count, indexed_at) VALUES (?, '', 0, 0)", [docPath]);
+      const res = await db.run("INSERT INTO docs (path, hash, page_count, indexed_at, created_at) VALUES (?, '', 0, 0, ?)", [docPath, createdAt]);
       docId = res.lastInsertId;
     }
     await insertPages(db, docId, pages);
-    await db.run('UPDATE docs SET hash = ?, page_count = ?, indexed_at = ? WHERE id = ?', [hash, pageCount, Date.now(), docId]);
+    await db.run('UPDATE docs SET hash = ?, page_count = ?, indexed_at = ?, created_at = ? WHERE id = ?', [hash, pageCount, Date.now(), createdAt, docId]);
   });
 
   return { status: existing ? 'updated' : 'added', pageCount };
@@ -76,10 +79,10 @@ async function deleteDocPages(db, docId) {
 
 /**
  * @param {import('./db-adapter.js').DbAdapter} db
- * @returns {Promise<{ id: number, path: string, hash: string, page_count: number, indexed_at: number }[]>}
+ * @returns {Promise<{ id: number, path: string, hash: string, page_count: number, indexed_at: number, created_at: number | null }[]>}
  */
 export function listDocs(db) {
-  return db.all('SELECT id, path, hash, page_count, indexed_at FROM docs ORDER BY path');
+  return db.all('SELECT id, path, hash, page_count, indexed_at, created_at FROM docs ORDER BY path');
 }
 
 /** Retire un document de l'index. @param {import('./db-adapter.js').DbAdapter} db @param {number} docId */

@@ -1,5 +1,5 @@
 // Indexation d'un dossier : lecture (plugin-fs) + extraction (worker pdfjs) + écriture SQL (cœur).
-import { readDir, readFile } from '@tauri-apps/plugin-fs';
+import { readDir, readFile, stat } from '@tauri-apps/plugin-fs';
 import { join } from '@tauri-apps/api/path';
 import { createExtractor, indexDocument, listDocs, removeDoc } from '@pdfref/core';
 import { pdfjs, PDFJS_OPTIONS } from './pdfjs.js';
@@ -40,7 +40,10 @@ export async function indexFolder(db, dir, onProgress) {
     onProgress({ index, total: files.length, file });
     try {
       const bytes = await readFile(file);
-      const res = await indexDocument(db, { path: file, bytes }, extractor, {
+      const info = await stat(file);
+      // date de création du fichier (repli : date de modification si le système ne la fournit pas)
+      const createdAt = (info.birthtime ?? info.mtime)?.getTime() ?? null;
+      const res = await indexDocument(db, { path: file, bytes, createdAt }, extractor, {
         onPage: (pageNum, pageCount) => onProgress({ index, total: files.length, file, pageNum, pageCount }),
       });
       summary[res.status]++;

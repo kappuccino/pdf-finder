@@ -83,6 +83,18 @@ describe.each([
 });
 
 describe('indexation incrémentale', () => {
+  it('met à jour la date de création même si le contenu est inchangé', async () => {
+    const db = openSqlite(':memory:');
+    await initSchema(db, { log: () => {} });
+    const p = path.join(dir, 'cut.pdf');
+    const bytes = new Uint8Array(await readFile(p));
+    await indexDocument(db, { path: p, bytes, createdAt: 1000 }, extractor);
+    expect((await indexDocument(db, { path: p, bytes, createdAt: 2000 }, extractor)).status).toBe('skipped');
+    const [{ created_at }] = await db.all('SELECT created_at FROM docs');
+    expect(created_at).toBe(2000);
+    db.close();
+  });
+
   it('ne retraite pas un fichier inchangé', async () => {
     const db = openSqlite(':memory:');
     await initSchema(db, { log: () => {} });

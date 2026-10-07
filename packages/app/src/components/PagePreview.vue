@@ -6,7 +6,7 @@ import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { exportFileName } from '@pdfref/core';
 import { dragOnMove, prepareDrag } from '../lib/drag.js';
 import { pageBytes, renderPage } from '../lib/pages.js';
-import { dirName, fileManager, fileName } from '../lib/paths.js';
+import { dirName, fileManager, fileName, formatDate } from '../lib/paths.js';
 
 const props = defineProps({ result: Object, query: String });
 const emit = defineEmits(['notify']);
@@ -57,7 +57,10 @@ watch(() => props.result, draw);
     <template v-if="result">
       <header class="preview-head">
         <div class="preview-info">
-          <div class="preview-name">{{ fileName(result.docPath) }} <span class="result-page">page {{ result.pageNum }}</span></div>
+          <div class="preview-name">
+            {{ fileName(result.docPath) }} <span class="result-page">page {{ result.pageNum }}</span>
+            <span class="result-date">créé le {{ formatDate(result.createdAt) }}</span>
+          </div>
           <div class="preview-path" :title="result.docPath">{{ dirName(result.docPath) }}</div>
         </div>
         <div class="preview-actions">

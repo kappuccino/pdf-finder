@@ -54,6 +54,8 @@ code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; w
 .result-head { display: flex; gap: 8px; align-items: baseline; }
 .result-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .result-page { color: var(--accent); font-weight: 600; white-space: nowrap; }
+.result-date { margin-left: auto; color: var(--muted); font-size: 12px; font-weight: normal; white-space: nowrap; }
+.preview-name .result-date { margin-left: 8px; }
 .result-path { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .result-snippet { margin-top: 4px; font-size: 13px; line-height: 1.4; }
 mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1px; }

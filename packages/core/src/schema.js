@@ -1,5 +1,6 @@
 // v2 : rowids des pages déterministes (docId × PAGE_STRIDE + page)
-export const SCHEMA_VERSION = 2;
+// v3 : docs.created_at (date de création du fichier, ms)
+export const SCHEMA_VERSION = 3;
 
 const DOCS_DDL = `
 CREATE TABLE IF NOT EXISTS docs (
@@ -7,7 +8,8 @@ CREATE TABLE IF NOT EXISTS docs (
   path        TEXT UNIQUE NOT NULL,
   hash        TEXT NOT NULL,
   page_count  INTEGER NOT NULL,
-  indexed_at  INTEGER NOT NULL
+  indexed_at  INTEGER NOT NULL,
+  created_at  INTEGER                 -- date de création du fichier (ms), pour le tri
 );`;
 
 const PAGES_TEXT_FTS = `
@@ -68,13 +70,17 @@ export async function initSchema(db, { log = console.warn, disableTrigram = fals
 
   // L'index n'est qu'un cache des PDF : si le schéma a changé, on le reconstruit.
   const [{ user_version: version }] = await db.all('PRAGMA user_version');
-  if (version !== 0 && version !== SCHEMA_VERSION) {
+  if (version !== 0 && version !== SCHEMA_VERSION && version !== 2) {
     log(`[pdfref] Schéma v${version} → v${SCHEMA_VERSION} : l'index est vidé, relancez l'indexation.`);
     await db.exec('DROP TABLE IF EXISTS pages_text');
     await db.exec('DROP TABLE IF EXISTS pages_ref');
     await db.exec('DROP TABLE IF EXISTS docs');
   }
   await db.exec(DOCS_DDL);
+  if (version === 2) {
+    // v2 → v3 sans réindexation : la date est renseignée au prochain passage de l'indexation.
+    await db.exec('ALTER TABLE docs ADD COLUMN created_at INTEGER');
+  }
 
   const existing = await db.all("SELECT name, sql FROM sqlite_master WHERE name IN ('pages_text', 'pages_ref')");
   if (existing.length === 0) {
@@ -82,8 +88,8 @@ export async function initSchema(db, { log = console.warn, disableTrigram = fals
     else if (!caps.trigram) log(`[pdfref] Tokenizer trigram indisponible (SQLite ${caps.sqliteVersion}) : repli sur LIKE '%…%'.`);
     await db.exec(caps.fts5 ? PAGES_TEXT_FTS : PAGES_TEXT_PLAIN);
     await db.exec(caps.trigram ? PAGES_REF_FTS : PAGES_REF_PLAIN);
-    await db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   }
+  await db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 
   const [ref] = await db.all("SELECT sql FROM sqlite_master WHERE name = 'pages_ref'");
   const refMode = /trigram/i.test(ref.sql) ? 'trigram' : 'like';

@@ -35,7 +35,10 @@ export async function indexCommand(inputs, opts) {
     const label = `[${i + 1}/${files.length}] ${path.relative(process.cwd(), file)}`;
     try {
       const bytes = new Uint8Array(await readFile(file));
-      const res = await indexDocument(db, { path: file, bytes }, extractor, {
+      const st = await stat(file);
+      // birthtime peut valoir 0 sur certains systèmes de fichiers : repli sur la date de modification
+      const createdAt = Math.round(st.birthtimeMs || st.mtimeMs);
+      const res = await indexDocument(db, { path: file, bytes, createdAt }, extractor, {
         force: opts.force,
         onPage: (n, total) => {
           if (tty) process.stderr.write(`\r\x1b[K${label} · page ${n}/${total}`);

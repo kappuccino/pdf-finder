@@ -40,7 +40,7 @@ export async function runSelfTest(db, info, dir, refs) {
       const res = await search(db, ref, { refMode: info.refMode });
       report.searches[ref] = {
         ms: Math.round(performance.now() - t0),
-        results: res.map((r) => `${r.docPath.split('/').pop()} p${r.pageNum} ${r.match}`),
+        results: res.map((r) => `${r.docPath.split("/").pop()} p${r.pageNum} ${r.match} ${r.createdAt ? new Date(r.createdAt).toISOString() : "sans date"}`),
       };
     }
 
