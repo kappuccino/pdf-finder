@@ -8,7 +8,7 @@ const writeText = (file, text, opts) => writeFile(file, enc.encode(text), opts);
 import { appCacheDir, join } from '@tauri-apps/api/path';
 import { search } from '@pdfref/core';
 import { indexFolder } from './indexer.js';
-import { thumbnailDataUrl, writeDragFile } from './pages.js';
+import { prepareDrag } from './drag.js';
 
 export async function runSelfTest(db, info, dir, refs) {
   const report = { userAgent: navigator.userAgent, info, dir };
@@ -40,14 +40,18 @@ export async function runSelfTest(db, info, dir, refs) {
       const res = await search(db, ref, { refMode: info.refMode });
       report.searches[ref] = {
         ms: Math.round(performance.now() - t0),
-        results: res.map((r) => `${r.docPath.split("/").pop()} p${r.pageNum} ${r.match} ${r.createdAt ? new Date(r.createdAt).toISOString() : "sans date"}`),
+        results: res.map((r) => `${r.docPath.split('/').pop()} ${r.kind} p${r.pageNum ?? '-'} ${r.match}${r.nameMatch ? ' [nom]' : ''}`),
       };
     }
 
-    const [first] = await search(db, refs[0], { refMode: info.refMode });
-    const file = await writeDragFile(first.docPath, first.pageNum, refs[0]);
-    report.dragFile = { file, size: (await stat(file)).size };
-    report.thumbnailLength = (await thumbnailDataUrl(first.docPath, first.pageNum)).length;
+    // drag : premier résultat de chaque recherche (page générée, ou fichier entier : image / PDF par nom)
+    report.drag = {};
+    for (const ref of refs) {
+      const [first] = await search(db, ref, { refMode: info.refMode });
+      if (!first) continue;
+      const [file, icon] = await prepareDrag(first, ref);
+      report.drag[ref] = { file, size: (await stat(file)).size, iconLength: icon.length };
+    }
     report.ok = true;
   } catch (err) {
     report.ok = false;

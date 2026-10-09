@@ -1,5 +1,6 @@
 import { PDFDocument } from 'pdf-lib';
 import { normalize } from './normalize.js';
+import { fileStem } from './files.js';
 
 /**
  * Copie des pages (éventuellement issues de plusieurs PDF) dans un nouveau PDF autonome.
@@ -45,8 +46,7 @@ export function exportPage(bytes, pageNum) {
  * @param {string} ref référence telle que saisie (normalisée ici)
  */
 export function exportFileName(docPath, pageNum, ref) {
-  const base = docPath.split(/[\\/]/).pop().replace(/\.pdf$/i, '');
-  return `${safeName(base)}_p${pageNum}_${safeName(normalize(ref))}.pdf`;
+  return `${safeName(fileStem(docPath))}_p${pageNum}_${safeName(normalize(ref))}.pdf`;
 }
 
 const safeName = (s) => s.replace(/[\\/:*?"<>|\s]+/g, '_').replace(/^_+|_+$/g, '');

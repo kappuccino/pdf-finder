@@ -1,6 +1,7 @@
 node_modules/
 fixtures/*.pdf
 fixtures/expected.json
+fixtures/images/
 *.db
 *.db-*
 out/

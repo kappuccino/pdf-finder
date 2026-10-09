@@ -45,7 +45,9 @@ describe('migrations du schéma', () => {
 
     expect(await version(migrated)).toBe(SCHEMA_VERSION);
     expect(await docsColumns(migrated)).toEqual(await docsColumns(fresh));
-    expect(await migrated.all('SELECT path, created_at FROM docs')).toEqual([{ path: '/a.pdf', created_at: null }]);
+    expect(await migrated.all('SELECT path, created_at, kind, name_norm FROM docs')).toEqual([
+      { path: '/a.pdf', created_at: null, kind: 'pdf', name_norm: 'A' },
+    ]);
     expect(await migrated.all('SELECT COUNT(*) AS n FROM pages_ref')).toEqual([{ n: 1 }]);
     expect(logs.some((m) => /reconstruit/.test(m))).toBe(false);
     fresh.close();

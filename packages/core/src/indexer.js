@@ -1,5 +1,6 @@
 import { normalize } from './normalize.js';
 import { sha1Hex } from './hash.js';
+import { nameNorm } from './files.js';
 
 /** Rowid des pages : docId × PAGE_STRIDE + n° de page (identique dans pages_text et pages_ref). */
 export const PAGE_STRIDE = 100_000;
@@ -21,7 +22,7 @@ const BATCH = 200;
 export async function indexDocument(db, { path, bytes, createdAt = null }, extractor, { onPage, force = false } = {}) {
   const docPath = path.normalize('NFC');
   const hash = await sha1Hex(bytes);
-  const [existing] = await db.all('SELECT id, hash, page_count, created_at FROM docs WHERE path = ?', [docPath]);
+  const [existing] = await db.all("SELECT id, hash, page_count, created_at FROM docs WHERE path = ? AND kind = 'pdf'", [docPath]);
   if (existing && existing.hash === hash && !force) {
     if (createdAt != null && existing.created_at !== createdAt) {
       await db.run('UPDATE docs SET created_at = ? WHERE id = ?', [createdAt, existing.id]);
@@ -38,7 +39,10 @@ export async function indexDocument(db, { path, bytes, createdAt = null }, extra
       await db.run("UPDATE docs SET hash = '' WHERE id = ?", [docId]);
       await deleteDocPages(db, docId);
     } else {
-      const res = await db.run("INSERT INTO docs (path, hash, page_count, indexed_at, created_at) VALUES (?, '', 0, 0, ?)", [docPath, createdAt]);
+      const res = await db.run(
+        "INSERT INTO docs (path, hash, page_count, indexed_at, created_at, kind, name_norm) VALUES (?, '', 0, 0, ?, 'pdf', ?)",
+        [docPath, createdAt, nameNorm(docPath)],
+      );
       docId = res.lastInsertId;
     }
     await insertPages(db, docId, pages);
@@ -46,6 +50,33 @@ export async function indexDocument(db, { path, bytes, createdAt = null }, extra
   });
 
   return { status: existing ? 'updated' : 'added', pageCount };
+}
+
+/**
+ * Indexe une image : uniquement son chemin (et sa date), pour la recherche par nom de fichier.
+ *
+ * @param {import('./db-adapter.js').DbAdapter} db
+ * @param {{ path: string, createdAt?: number | null }} file
+ * @returns {Promise<{ status: 'added' | 'updated' | 'skipped', pageCount: 0 }>}
+ */
+export async function indexImage(db, { path, createdAt = null }) {
+  const docPath = path.normalize('NFC');
+  const [existing] = await db.all('SELECT id, kind, created_at FROM docs WHERE path = ?', [docPath]);
+  if (!existing) {
+    await db.run(
+      "INSERT INTO docs (path, hash, page_count, indexed_at, created_at, kind, name_norm) VALUES (?, 'image', 0, ?, ?, 'image', ?)",
+      [docPath, Date.now(), createdAt, nameNorm(docPath)],
+    );
+    return { status: 'added', pageCount: 0 };
+  }
+  if (existing.kind === 'image' && existing.created_at === createdAt) return { status: 'skipped', pageCount: 0 };
+  if (existing.kind !== 'image') await deleteDocPages(db, existing.id);
+  await db.run("UPDATE docs SET kind = 'image', hash = 'image', page_count = 0, created_at = ?, name_norm = ? WHERE id = ?", [
+    createdAt,
+    nameNorm(docPath),
+    existing.id,
+  ]);
+  return { status: 'updated', pageCount: 0 };
 }
 
 /**
@@ -79,10 +110,10 @@ async function deleteDocPages(db, docId) {
 
 /**
  * @param {import('./db-adapter.js').DbAdapter} db
- * @returns {Promise<{ id: number, path: string, hash: string, page_count: number, indexed_at: number, created_at: number | null }[]>}
+ * @returns {Promise<{ id: number, path: string, hash: string, page_count: number, indexed_at: number, created_at: number | null, kind: 'pdf' | 'image' }[]>}
  */
 export function listDocs(db) {
-  return db.all('SELECT id, path, hash, page_count, indexed_at, created_at FROM docs ORDER BY path');
+  return db.all('SELECT id, path, hash, page_count, indexed_at, created_at, kind FROM docs ORDER BY path');
 }
 
 /** Retire un document de l'index. @param {import('./db-adapter.js').DbAdapter} db @param {number} docId */
@@ -95,7 +126,9 @@ export function removeDoc(db, docId) {
 
 /** @param {import('./db-adapter.js').DbAdapter} db */
 export async function getStats(db) {
-  const [{ docs }] = await db.all('SELECT COUNT(*) AS docs FROM docs');
+  const [{ docs, images }] = await db.all(
+    "SELECT SUM(kind = 'pdf') AS docs, SUM(kind = 'image') AS images FROM docs",
+  );
   const [{ pages }] = await db.all('SELECT COUNT(*) AS pages FROM pages_ref');
-  return { docs, pages };
+  return { docs: docs ?? 0, images: images ?? 0, pages };
 }

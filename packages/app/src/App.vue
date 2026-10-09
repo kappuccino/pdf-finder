@@ -11,7 +11,7 @@ import { loadSettings, saveSetting } from './lib/settings.js';
 
 const settings = ref({ pdfDir: null, indexOnStartup: true });
 const info = ref(null);
-const stats = ref({ docs: 0, pages: 0 });
+const stats = ref({ docs: 0, images: 0, pages: 0 });
 const showSettings = ref(false);
 
 const query = ref('');
@@ -55,7 +55,7 @@ async function reindex() {
     const s = await indexFolder(db, settings.value.pdfDir, (p) => (progress.value = p));
     indexErrors.value = s.errors;
     notice.value =
-      `Index à jour : ${s.files} PDF (${s.added} ajoutés, ${s.updated} modifiés, ${s.removed} retirés)` +
+      `Index à jour : ${s.files - s.images} PDF et ${s.images} images (${s.added} ajoutés, ${s.updated} modifiés, ${s.removed} retirés)` +
       ` · ${s.pages} pages lues en ${s.seconds.toFixed(1)} s`;
   } catch (err) {
     indexErrors.value = [{ file: settings.value.pdfDir, message: err.message ?? String(err) }];
@@ -149,7 +149,7 @@ onMounted(async () => {
         </span>
         <progress :value="progress.index" :max="progress.total || 1" />
       </template>
-      <span v-else>{{ notice || `${stats.docs} documents · ${stats.pages} pages indexées` }}</span>
+      <span v-else>{{ notice || `${stats.docs} PDF · ${stats.images} images · ${stats.pages} pages indexées` }}</span>
       <span class="spacer" />
       <button v-if="!indexing && indexErrors.length" class="error-button" @click="showSettings = true">
         ⚠ {{ indexErrors.length }} fichier(s) non indexé(s)

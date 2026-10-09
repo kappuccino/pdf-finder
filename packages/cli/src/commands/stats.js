@@ -3,11 +3,12 @@ import { openIndex } from '../context.js';
 
 export async function statsCommand(opts) {
   const { db, info } = await openIndex(opts.db);
-  const { docs, pages } = await getStats(db);
+  const { docs, images, pages } = await getStats(db);
   db.close();
   const ok = (b) => (b ? 'OK' : 'ABSENT');
   console.log(`Base           : ${opts.db}`);
-  console.log(`Documents      : ${docs}`);
+  console.log(`Documents PDF  : ${docs}`);
+  console.log(`Images         : ${images}`);
   console.log(`Pages          : ${pages}`);
   console.log(`SQLite         : ${info.sqliteVersion}`);
   console.log(`FTS5           : ${ok(info.fts5)}`);

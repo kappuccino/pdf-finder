@@ -1,4 +1,5 @@
 import { normalize, normalizeWithMap } from './normalize.js';
+import { baseName } from './files.js';
 
 export const MAX_RESULTS = 200;
 const SNIPPET_CONTEXT = 60;
@@ -16,17 +17,26 @@ const RANK = { exact: 0, prefix: 1, partial: 2 };
 /**
  * @typedef {object} SearchResult
  * @property {string} docPath
- * @property {number} pageNum
+ * @property {'pdf' | 'image'} kind
+ * @property {number | null} pageNum page trouvée, ou null quand le résultat est le fichier entier
+ *   (image, ou PDF trouvé seulement par son nom)
+ * @property {number} pageCount nombre de pages du PDF (0 pour une image)
  * @property {number | null} createdAt date de création du fichier (ms)
- * @property {MatchQuality} match
- * @property {string} snippet extrait du texte lisible autour de la correspondance
+ * @property {boolean} nameMatch la référence figure dans le nom du fichier
+ * @property {{ start: number, end: number } | null} nameHighlight position de la référence dans le nom du fichier
+ * @property {MatchQuality | 'filename'} match qualité de la correspondance dans le texte ('filename' : nom seul)
+ * @property {string} snippet extrait du texte lisible autour de la correspondance ('' si trouvé par le nom)
  * @property {{ start: number, end: number } | null} highlight position de la référence dans `snippet`
  */
 
 /**
- * Recherche une référence (sous-chaîne, après normalisation).
- * Tri : fichiers les plus récents d'abord (date de création), puis chemin et page.
- * Les correspondances 'partial' (souvent des faux positifs) passent en dernier.
+ * Recherche une référence (sous-chaîne, après normalisation) dans le texte des PDF
+ * et dans le nom des fichiers (PDF et images).
+ *
+ * Tri :
+ *   1. fichiers dont le NOM contient la référence (ex. `ABC.pdf`, `abc.jpg` pour ABC) ;
+ *   2. correspondances 'partial' dans le texte (souvent des faux positifs) en dernier ;
+ *   3. fichiers les plus récents d'abord (date de création), puis chemin et page.
  *
  * @param {import('./db-adapter.js').DbAdapter} db
  * @param {string} query
@@ -36,33 +46,84 @@ const RANK = { exact: 0, prefix: 1, partial: 2 };
 export async function search(db, query, { refMode = 'trigram', limit = MAX_RESULTS } = {}) {
   const q = normalize(query);
   if (q.length < 3) return [];
+  const max = Math.min(limit, MAX_RESULTS);
+  const like = `%${q.replace(/[\\%_]/g, '\\$&')}%`;
 
+  // Fichiers trouvés par leur nom (la table docs reste petite : un LIKE suffit)
+  const byName = await db.all(
+    `SELECT id, path, kind, page_count AS pageCount, created_at AS createdAt
+       FROM docs WHERE name_norm LIKE ? ESCAPE '\\' AND hash <> ''
+      ORDER BY created_at IS NULL, created_at DESC, path
+      LIMIT ?`,
+    [like, max],
+  );
+  const nameIds = new Set(byName.map((d) => d.id));
+
+  // Pages dont le texte contient la référence
   const where = refMode === 'trigram' ? 'r.ref_norm MATCH ?' : "r.ref_norm LIKE ? ESCAPE '\\'";
-  const param = refMode === 'trigram' ? `"${q.replaceAll('"', '""')}"` : `%${q.replace(/[\\%_]/g, '\\$&')}%`;
-
+  const param = refMode === 'trigram' ? `"${q.replaceAll('"', '""')}"` : like;
   const rows = await db.all(
-    `SELECT d.path AS docPath, d.created_at AS createdAt, r.page_num AS pageNum, t.content AS content
+    `SELECT d.id AS docId, d.path AS docPath, d.page_count AS pageCount, d.created_at AS createdAt,
+            r.page_num AS pageNum, t.content AS content
        FROM pages_ref r
        JOIN docs d ON d.id = r.doc_id
        JOIN pages_text t ON t.rowid = r.rowid
       WHERE ${where}
       ORDER BY d.created_at IS NULL, d.created_at DESC, d.path, r.page_num
       LIMIT ?`,
-    [param, Math.min(limit, MAX_RESULTS)],
+    [param, max],
   );
 
-  const results = rows.map(({ docPath, createdAt, pageNum, content }) => {
+  const nameInfo = (path) => findBestMatch(baseName(path), q);
+  const results = rows.map(({ docId, docPath, pageCount, createdAt, pageNum, content }) => {
     const m = findBestMatch(content, q);
+    const named = nameIds.has(docId);
     return {
       docPath,
-      createdAt: createdAt == null ? null : Number(createdAt),
+      kind: 'pdf',
       pageNum: Number(pageNum),
+      pageCount: Number(pageCount),
+      createdAt: createdAt == null ? null : Number(createdAt),
+      nameMatch: named,
+      nameHighlight: named ? pick(nameInfo(docPath)) : null,
       match: m?.match ?? 'partial',
       ...makeSnippet(content, m),
     };
   });
-  // tri stable : l'ordre date/fichier/page de SQLite est conservé, seuls les 'partial' passent à la fin
-  return results.sort((a, b) => (a.match === 'partial') - (b.match === 'partial'));
+
+  // Fichiers trouvés par leur nom mais sans page correspondante (images, PDF) : le fichier entier
+  const withPages = new Set(rows.map((r) => r.docId));
+  for (const d of byName) {
+    if (withPages.has(d.id)) continue;
+    results.push({
+      docPath: d.path,
+      kind: d.kind,
+      pageNum: null,
+      pageCount: Number(d.pageCount),
+      createdAt: d.createdAt == null ? null : Number(d.createdAt),
+      nameMatch: true,
+      nameHighlight: pick(nameInfo(d.path)),
+      match: 'filename',
+      snippet: '',
+      highlight: null,
+    });
+  }
+
+  return results.sort(compareResults).slice(0, max);
+}
+
+const pick = (m) => (m ? { start: m.start, end: m.end } : null);
+
+/** Nom de fichier d'abord, 'partial' en dernier, puis date décroissante, chemin, page (fichier entier en tête). */
+function compareResults(a, b) {
+  return (
+    b.nameMatch - a.nameMatch ||
+    (a.match === 'partial') - (b.match === 'partial') ||
+    (a.createdAt == null) - (b.createdAt == null) ||
+    (b.createdAt ?? 0) - (a.createdAt ?? 0) ||
+    a.docPath.localeCompare(b.docPath) ||
+    (a.pageNum ?? 0) - (b.pageNum ?? 0)
+  );
 }
 
 const ALNUM = /[\p{L}\p{N}]/u;

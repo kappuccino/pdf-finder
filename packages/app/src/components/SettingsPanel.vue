@@ -28,7 +28,7 @@ async function chooseDir() {
     </header>
 
     <div class="field">
-      <label>Dossier des PDF (sous-dossiers inclus)</label>
+      <label>Dossier des PDF et images (sous-dossiers inclus)</label>
       <div class="dir-row">
         <code class="dir">{{ settings.pdfDir ?? 'Aucun dossier choisi' }}</code>
         <button class="primary" :disabled="indexing" @click="chooseDir">Choisir…</button>
@@ -55,7 +55,7 @@ async function chooseDir() {
 
     <dl class="infos">
       <dt>Index</dt>
-      <dd>{{ stats.docs }} documents · {{ stats.pages }} pages</dd>
+      <dd>{{ stats.docs }} PDF ({{ stats.pages }} pages) · {{ stats.images }} images (jpg/png, nom seul)</dd>
       <dt>SQLite</dt>
       <dd>
         {{ info?.sqliteVersion }} · FTS5 {{ info?.fts5 ? 'OK' : 'absent' }} · trigram {{ info?.trigram ? 'OK' : 'absent (repli LIKE)' }}

@@ -106,7 +106,13 @@ macOS (Apple Silicon) : **DMG 4,95 Mo**, `.app` 7,6 Mo. Windows : à relever lor
   La base `index.db` est dans le dossier de config de l'app (même dossier sur macOS et Windows). Les deux chemins sont affichés dans l'écran Réglages.
 - **Accès au dossier** : seul le dossier choisi dans le dialogue est lisible (scope fs dynamique). Il est mémorisé entre deux lancements par `tauri-plugin-persisted-scope`, sans ouvrir `**`.
 - **Indexation** : l'analyse des PDF tourne dans le Web Worker de pdfjs (l'UI reste fluide : 23 ms max entre deux frames pendant l'indexation du catalogue) et l'écriture SQL se fait par lots. L'indexation est incrémentale (SHA-1), retire les fichiers supprimés, et affiche sa progression dans la barre d'état. Les fichiers non indexés sont signalés par un bouton rouge, et la liste avec la raison de chaque échec est affichée dans Réglages.
-- **Recherche** : saisie au fil de la frappe (délai de 200 ms). Chaque résultat affiche le **nom du fichier**, la **page**, la **date de création du fichier** et le **chemin du dossier**, avec le snippet surligné. Les résultats sont **triés du fichier le plus récent au plus ancien** (date de création sur le disque, ou date de modification si le système ne la fournit pas). Les correspondances « approximatif » passent en fin de liste. Les flèches ↑/↓ naviguent dans les résultats.
+- **Fichiers indexés** : les PDF (texte, page par page) et les **images jpg/jpeg/png (chemin seul, pas le contenu)**.
+- **Recherche** : saisie au fil de la frappe (délai de 200 ms). Chaque résultat affiche le **nom du fichier**, la **page**, la **date de création du fichier** et le **chemin du dossier**, avec le snippet surligné. Ordre des résultats :
+  1. **les fichiers dont le nom contient la référence** (ex. `ABC.pdf`, `abc.jpg`, `ABC notice.pdf` pour `ABC`), avec la référence surlignée dans le nom ;
+  2. les correspondances « approximatif » dans le texte en dernier ;
+  3. à rang égal, **du fichier le plus récent au plus ancien** (date de création sur le disque, ou date de modification si le système ne la fournit pas).
+
+  Une image, ou un PDF trouvé par son nom mais pas dans son texte, donne un résultat « fichier entier ». L'aperçu montre l'image ou la première page, et le glisser/exporter porte sur le fichier d'origine tel quel. Les flèches ↑/↓ naviguent dans les résultats.
 - **Aperçu** : rendu canvas pdfjs, avec les boutons « Exporter… » (dialogue d'enregistrement) et « Afficher dans le Finder/l'Explorateur ».
 - **Drag & drop vers une autre app** : glisser un résultat (ou le bouton « Glisser la page ») dépose un **PDF d'une seule page**, généré à la volée (`{nomPDF}_p{num}_{REF}.pdf`). Le fichier est préparé au survol dans le cache de l'app (`$APPCACHE/drag`, vidé à chaque lancement), puis glissé comme un vrai fichier via `tauri-plugin-drag`, avec une vignette de la page comme icône.
 

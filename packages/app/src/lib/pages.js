@@ -79,3 +79,26 @@ export async function writeDragFile(path, pageNum, ref) {
   await writeFile(file, await pageBytes(path, pageNum));
   return file;
 }
+
+const imageUrls = new Map();
+
+/** URL (blob:) d'une image du dossier, pour l'afficher dans l'aperçu. */
+export function imageUrl(path) {
+  if (!imageUrls.has(path)) {
+    const type = /\.png$/i.test(path) ? 'image/png' : 'image/jpeg';
+    imageUrls.set(path, readFile(path).then((bytes) => URL.createObjectURL(new Blob([bytes], { type }))));
+  }
+  return imageUrls.get(path);
+}
+
+/** Vignette PNG (data URL) d'une image, pour l'icône du drag. */
+export async function imageThumbnailDataUrl(path, width = 120) {
+  const img = new Image();
+  img.src = await imageUrl(path);
+  await img.decode();
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = Math.max(1, Math.round((img.naturalHeight / img.naturalWidth) * width));
+  canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/png');
+}

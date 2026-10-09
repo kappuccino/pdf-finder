@@ -1,7 +1,10 @@
+import { nameNorm } from './files.js';
+
 /**
  * Migrations du schéma, appliquées dans l'ordre à partir de la version de la base (PRAGMA user_version).
  * Pour faire évoluer le schéma :
- *   1. ajouter une entrée { version: N + 1, up: [...] } ici ;
+ *   1. ajouter une entrée { version: N + 1, up: [...] } ici (SQL, ou fonction async (db) => … pour
+ *      une reprise de données) ;
  *   2. reporter la modification dans le DDL ci-dessous (utilisé pour une base neuve) ;
  *   3. ajouter un test de migration (packages/core/test/schema.test.js).
  * Une base plus ancienne que BASE_VERSION, ou plus récente que l'app, est reconstruite :
@@ -10,6 +13,19 @@
 export const MIGRATIONS = [
   // v3 : date de création du fichier (ms), renseignée au prochain passage de l'indexation
   { version: 3, up: ['ALTER TABLE docs ADD COLUMN created_at INTEGER'] },
+  // v4 : images indexées (chemin seul) + nom de fichier normalisé, pour la recherche par nom
+  {
+    version: 4,
+    up: [
+      "ALTER TABLE docs ADD COLUMN kind TEXT NOT NULL DEFAULT 'pdf'",
+      'ALTER TABLE docs ADD COLUMN name_norm TEXT',
+      async (db) => {
+        for (const { id, path } of await db.all('SELECT id, path FROM docs')) {
+          await db.run('UPDATE docs SET name_norm = ? WHERE id = ?', [nameNorm(path), id]);
+        }
+      },
+    ],
+  },
 ];
 
 /** v2 : rowids des pages déterministes (docId × PAGE_STRIDE + page) ; avant, l'index est incompatible. */
@@ -23,7 +39,9 @@ CREATE TABLE IF NOT EXISTS docs (
   hash        TEXT NOT NULL,
   page_count  INTEGER NOT NULL,
   indexed_at  INTEGER NOT NULL,
-  created_at  INTEGER                 -- date de création du fichier (ms), pour le tri
+  created_at  INTEGER,                -- date de création du fichier (ms), pour le tri
+  kind        TEXT NOT NULL DEFAULT 'pdf',  -- 'pdf' (texte indexé) ou 'image' (chemin seul)
+  name_norm   TEXT                    -- nom de fichier normalisé, sans extension
 );`;
 
 const PAGES_TEXT_FTS = `
@@ -96,7 +114,7 @@ export async function initSchema(db, { log = console.warn, disableTrigram = fals
   } else {
     for (const m of MIGRATIONS.filter((m) => m.version > version)) {
       log(`[pdfref] Migration du schéma v${version} → v${m.version}`);
-      for (const sql of m.up) await db.exec(sql);
+      for (const step of m.up) await (typeof step === 'function' ? step(db) : db.exec(step));
       // version enregistrée après chaque étape : une migration interrompue reprend à la bonne étape
       await db.exec(`PRAGMA user_version = ${m.version}`);
       version = m.version;

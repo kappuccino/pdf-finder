@@ -122,6 +122,19 @@ async function big(pageCount, refs) {
   return ctx.doc.save();
 }
 
+// PNG 1×1 (gris) : les images ne sont indexées que par leur nom, le contenu importe peu.
+const TINY_PNG = Uint8Array.from(
+  atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNoAAAAggCBd81ytgAAAABJRU5ErkJggg=='),
+  (c) => c.charCodeAt(0),
+);
+
+/** PDF dont le nom porte la référence, mais pas le texte (cas « notice ABC.pdf »). */
+async function namedNotice() {
+  const ctx = await newDoc();
+  textPage(ctx, 'Notice de montage', ['Ce document décrit le montage du coffret (référence dans le nom du fichier).']);
+  return ctx.doc.save();
+}
+
 /**
  * Génère les fixtures dans `dir` et renvoie l'objet expected.
  * @param {string} dir
@@ -136,11 +149,18 @@ export async function makeFixtures(dir) {
     'cut.pdf': await cut(),
     'table.pdf': await table(),
     'big-500.pdf': await big(520, bigRefs),
+    'AB-1234-X notice.pdf': await namedNotice(),
+    'images/QR-7777-S.png': TINY_PNG,
   };
+  await mkdir(path.join(dir, 'images'), { recursive: true });
   for (const [name, bytes] of Object.entries(files)) await writeFile(path.join(dir, name), bytes);
 
+  // Ordre attendu : fichiers dont le NOM contient la référence d'abord (pages: [] = fichier entier).
   const expected = {
-    'AB-1234-X': [{ file: 'simple.pdf', pages: [3] }],
+    'AB-1234-X': [
+      { file: 'AB-1234-X notice.pdf', pages: [] },
+      { file: 'simple.pdf', pages: [3] },
+    ],
     'CD-5678-Y': [
       { file: 'multi-a.pdf', pages: [1, 4] },
       { file: 'multi-b.pdf', pages: [2] },
@@ -150,7 +170,10 @@ export async function makeFixtures(dir) {
     'MN-7788-P': [{ file: 'table.pdf', pages: [2] }],
     'OP-1100-R': [{ file: 'table.pdf', pages: [2] }],
     'KL-0001-A': [{ file: 'big-500.pdf', pages: bigRefs['KL-0001-A'] }],
-    'QR-7777-S': [{ file: 'big-500.pdf', pages: bigRefs['QR-7777-S'] }],
+    'QR-7777-S': [
+      { file: 'QR-7777-S.png', pages: [] },
+      { file: 'big-500.pdf', pages: bigRefs['QR-7777-S'] },
+    ],
     'ZZ-9999-Z': [],
   };
   await writeFile(path.join(dir, 'expected.json'), JSON.stringify(expected, null, 2) + '\n');

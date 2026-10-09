@@ -1,10 +1,10 @@
 // Fixtures → indexation → recherche → comparaison avec expected.json, + export.
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { exportPage, exportPages, indexDocument, initSchema, search } from '../src/index.js';
+import { exportPage, exportPages, fileKind, indexDocument, indexImage, initSchema, search } from '../src/index.js';
 import { makeFixtures } from '../../../scripts/make-fixtures.js';
 import { openSqlite } from '../../cli/src/sqlite-adapter.js';
 import { createNodeExtractor } from '../../cli/src/pdfjs-node.js';
@@ -12,14 +12,13 @@ import { createNodeExtractor } from '../../cli/src/pdfjs-node.js';
 let dir;
 let expected;
 const extractor = createNodeExtractor();
-const files = ['simple.pdf', 'multi-a.pdf', 'multi-b.pdf', 'cut.pdf', 'table.pdf', 'big-500.pdf'];
-
 async function buildIndex(opts) {
   const db = openSqlite(':memory:');
   const info = await initSchema(db, { log: () => {}, ...opts });
-  for (const f of files) {
+  for (const f of await readdir(dir, { recursive: true })) {
     const p = path.join(dir, f);
-    await indexDocument(db, { path: p, bytes: new Uint8Array(await readFile(p)) }, extractor);
+    if (fileKind(p) === 'pdf') await indexDocument(db, { path: p, bytes: new Uint8Array(await readFile(p)) }, extractor);
+    if (fileKind(p) === 'image') await indexImage(db, { path: p });
   }
   return { db, info };
 }
@@ -30,7 +29,7 @@ function group(results) {
   for (const r of results) {
     const f = path.basename(r.docPath);
     if (!byFile.has(f)) byFile.set(f, []);
-    byFile.get(f).push(r.pageNum);
+    if (r.pageNum != null) byFile.get(f).push(r.pageNum);
   }
   return [...byFile].map(([file, pages]) => ({ file, pages }));
 }
@@ -70,6 +69,12 @@ describe.each([
     for (const q of ['ab 1234 x', 'ab1234x', 'AB_1234.X']) {
       expect(group(await search(db, q, { refMode: info.refMode }))).toEqual(expected['AB-1234-X']);
     }
+  });
+
+  it('met en premier les fichiers dont le nom contient la référence, image comprise', async () => {
+    const [first] = await search(db, 'qr 7777 s', { refMode: info.refMode });
+    expect(first).toMatchObject({ kind: 'image', pageNum: null, nameMatch: true, match: 'filename' });
+    expect(path.basename(first.docPath).slice(first.nameHighlight.start, first.nameHighlight.end)).toBe('QR-7777-S');
   });
 
   it('renvoie un snippet avec la référence surlignée, même coupée sur deux lignes', async () => {
